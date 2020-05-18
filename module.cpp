@@ -118,10 +118,14 @@ static void processResult(RedisModuleCtx *ctx, v8::Local<v8::Context> &v8ctx, v8
         double dv = num->Value();
         RedisModule_ReplyWithDouble(ctx, dv);
     }
-    else
+    else if (result->IsString())
     {
         v8::String::Utf8Value utf8(isolate, result);
         RedisModule_ReplyWithCString(ctx, *utf8);
+    }
+    else
+    {
+        RedisModule_ReplyWithNull(ctx);
     }
 }
 

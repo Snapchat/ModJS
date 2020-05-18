@@ -3,12 +3,13 @@
 #include <libplatform/libplatform.h>
 #include <fstream>
 #include <streambuf>
+#include <stack>
+#include <experimental/filesystem>
 
 void KeyDBExecuteCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
 
 thread_local v8::Isolate *isolate = nullptr;
 thread_local v8::Persistent<v8::ObjectTemplate, v8::CopyablePersistentTraits<v8::ObjectTemplate>> tls_global;
-
 
 void javascript_initialize()
 {
@@ -39,6 +40,108 @@ static void LogCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
     v8::Local<v8::Value> arg = args[0];
     v8::String::Utf8Value value(isolate, arg);
     printf("%s\n", *value);
+}
+
+template<typename T>
+class StackPopper
+{
+    std::stack<T> &m_stack;
+public:
+    StackPopper(std::stack<T> &stack, T &&val)
+        : m_stack(stack)
+    {
+        stack.push(val);
+    }
+
+    ~StackPopper()
+    {
+        m_stack.pop();
+    }
+};
+
+static void RequireCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
+{
+    static thread_local std::stack<std::experimental::filesystem::path> stackpath;
+
+    if (args.Length() != 1) return;
+    v8::HandleScope scope(isolate);
+    v8::Local<v8::Value> arg = args[0];
+    v8::String::Utf8Value utf8Path(isolate, arg);
+    
+    std::experimental::filesystem::path path(*utf8Path);
+
+    if (path.is_relative() && !stackpath.empty())
+    {
+        // We have to make this relative to the previous file
+        path = stackpath.top().remove_filename() / path;
+    }
+    printf("Loading module: %s\n", path.c_str());
+
+
+    std::ifstream file(path.c_str(), std::ios::binary | std::ios::ate);
+    std::streamsize size = file.tellg();
+    if (size == -1)
+    {
+        isolate->ThrowException(v8::String::NewFromUtf8(isolate, "File not found").ToLocalChecked());
+        return; // Failed to read file
+    }
+
+    file.seekg(0, std::ios::beg);
+    StackPopper popper(stackpath, std::move(path));
+
+    std::vector<char> buffer(size);
+    if (!file.read(buffer.data(), size))
+    {
+        isolate->ThrowException(v8::String::NewFromUtf8(isolate, "File not found").ToLocalChecked());
+        return; // Failed to read file
+    }
+    
+    v8::Local<v8::ObjectTemplate> global = v8::Local<v8::ObjectTemplate>::New(isolate, tls_global);
+    v8::Local<v8::Context> context = v8::Context::New(isolate, nullptr, global);
+
+    v8::ScriptOrigin origin(arg,      // specifier
+        v8::Integer::New(isolate, 0),             // line offset
+        v8::Integer::New(isolate, 0),             // column offset
+        v8::False(isolate),                       // is cross origin
+        v8::Local<v8::Integer>(),                 // script id
+        v8::Local<v8::Value>(),                   // source map URL
+        v8::False(isolate),                       // is opaque
+        v8::False(isolate),                       // is WASM
+        v8::True(isolate));                       // is ES6 module
+    
+    v8::Context::Scope context_scope(context);
+
+    v8::Local<v8::String> source_text =
+        v8::String::NewFromUtf8(isolate, buffer.data(),
+                                v8::NewStringType::kNormal, buffer.size())
+            .ToLocalChecked();
+
+    v8::ScriptCompiler::Source source(source_text, origin);
+
+    v8::Local<v8::Module> module;
+    if (!v8::ScriptCompiler::CompileModule(isolate, &source).ToLocal(&module)) {
+        return;
+    }
+
+    bool flagT;
+    auto maybeInstantiated = module->InstantiateModule(context, [](v8::Local<v8::Context> context, // "main.mjs"
+                                      v8::Local<v8::String> specifier, // "some thing"
+                                      v8::Local<v8::Module> referrer) -> v8::MaybeLocal<v8::Module> {
+        return v8::Local<v8::Module>();
+    });
+    if (!maybeInstantiated.To(&flagT) || !flagT)
+    {
+        return;
+    }
+
+    v8::Local<v8::Value> result;
+    if (module->Evaluate(context).ToLocal(&result)) {
+        v8::Local<v8::Object> valglob = context->Global();
+        auto maybeExports = valglob->Get(context, v8::String::NewFromUtf8(isolate, "exports").ToLocalChecked());
+        v8::Local<v8::Value> exports;
+        if (maybeExports.ToLocal(&exports))
+            args.GetReturnValue().Set(exports);
+    }
 }
 
 
@@ -74,6 +177,12 @@ void javascript_thread_initialize()
     global->Set(v8::String::NewFromUtf8(isolate, "redis", v8::NewStringType::kNormal)
                     .ToLocalChecked(),
                 keydb_obj);
+    global->Set(v8::String::NewFromUtf8(isolate, "require", v8::NewStringType::kNormal)
+                    .ToLocalChecked(),
+                v8::FunctionTemplate::New(isolate, RequireCallback));
+    global->Set(v8::String::NewFromUtf8(isolate, "exports", v8::NewStringType::kNormal)
+                    .ToLocalChecked(),
+                v8::ObjectTemplate::New(isolate));
 
     tls_global = v8::Persistent<v8::ObjectTemplate, v8::CopyablePersistentTraits<v8::ObjectTemplate>>(isolate, global);
 }
@@ -137,7 +246,6 @@ v8::Local<v8::Value> javascript_run(v8::Local<v8::Context> &context, const char 
     // Convert the result to a KeyDB type and return it
     return result;
 }
-
 
 void javascript_thread_shutdown()
 {
