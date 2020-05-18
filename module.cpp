@@ -1,7 +1,9 @@
 #include "js.h"
 #include "redismodule.h"
+#include <limits.h>
 #include <vector>
 #include <v8.h>
+#include <math.h>
 
 thread_local RedisModuleCtx *g_ctx = nullptr;
 extern thread_local v8::Isolate *isolate;
@@ -22,7 +24,7 @@ static void ProcessCallReply(v8::Local<v8::Value> &dst, v8::Isolate* isolate, Re
         case REDISMODULE_REPLY_INTEGER:
             {
             long long val =  RedisModule_CallReplyInteger(reply);
-            dst = v8::BigInt::New(isolate, val);
+            dst = v8::Number::New(isolate, (double)val);
             break;
             }
 
@@ -103,6 +105,18 @@ static void processResult(RedisModuleCtx *ctx, v8::Local<v8::Context> &v8ctx, v8
             else
                 RedisModule_ReplyWithNull(ctx);
         }
+    }
+    else if (result->IsInt32())
+    {
+        v8::Local<v8::Int32> num = v8::Local<v8::Int32>::Cast(result);
+        int32_t val = num->Value();
+        RedisModule_ReplyWithLongLong(ctx, val);
+    }
+    else if (result->IsNumber())
+    {
+        v8::Local<v8::Number> num = v8::Local<v8::Number>::Cast(result);
+        double dv = num->Value();
+        RedisModule_ReplyWithDouble(ctx, dv);
     }
     else
     {
