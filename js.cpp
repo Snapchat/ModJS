@@ -130,19 +130,23 @@ static void RequireCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
         return v8::Local<v8::Module>();
     });
     if (!maybeInstantiated.To(&flagT) || !flagT)
-    {
         return;
-    }
 
     v8::Local<v8::Object> valglob = context->Global();
     v8::Local<v8::Object> valModule = v8::Local<v8::Object>::Cast(valglob->Get(context, v8::String::NewFromUtf8(isolate, "module").ToLocalChecked()).ToLocalChecked());
     auto strExport = v8::String::NewFromUtf8(isolate, "exports").ToLocalChecked();
     v8::Local<v8::Value> exports = valModule->Get(context, strExport).ToLocalChecked();
-    valglob->Set(context, strExport, exports);
+    auto maybeSet = valglob->Set(context, strExport, exports);
+    if (!maybeSet.To(&flagT) || !flagT)
+        return;
 
     v8::Local<v8::Value> result;
     if (module->Evaluate(context).ToLocal(&result)) {
-        args.GetReturnValue().Set(exports);
+        // Even though we got exports above, we have to get it again now that the module was evaluated,
+        //  this is because the module could have changed the object
+        auto maybeExports = valModule->Get(context, strExport);
+        if (maybeExports.ToLocal(&exports))
+            args.GetReturnValue().Set(exports);
     }
 }
 
