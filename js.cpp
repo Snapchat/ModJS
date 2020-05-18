@@ -59,6 +59,32 @@ public:
     }
 };
 
+std::experimental::filesystem::path find_module(std::experimental::filesystem::path name)
+{
+    std::experimental::filesystem::path path;
+
+    auto trypath = name;
+    trypath.append(".js");
+    if (std::experimental::filesystem::exists(trypath))
+        return trypath;
+
+    std::experimental::filesystem::path wdir = std::experimental::filesystem::current_path();
+    do
+    {
+        auto node_dir = wdir / "node_modules";
+        if (std::experimental::filesystem::is_directory(node_dir))
+        {
+            trypath = (node_dir / name).concat(".js");
+            if (std::experimental::filesystem::exists(trypath))
+                return trypath;
+            trypath = node_dir / name / "index.js";
+            if (std::experimental::filesystem::exists(trypath))
+                return trypath;
+        }
+        wdir = wdir.parent_path();
+    } while (!wdir.empty());
+}
+
 static void RequireCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     static thread_local std::stack<std::experimental::filesystem::path> stackpath;
@@ -69,12 +95,31 @@ static void RequireCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
     v8::String::Utf8Value utf8Path(isolate, arg);
     
     std::experimental::filesystem::path path(*utf8Path);
-
     if (path.is_relative() && !stackpath.empty())
     {
         // We have to make this relative to the previous file
-        path = stackpath.top().remove_filename() / path;
+        auto trypath = stackpath.top().remove_filename() / path;
+        if (std::experimental::filesystem::exists(trypath))
+        {
+            path = trypath;
+        }
+        else if (std::experimental::filesystem::exists(trypath.concat(".js")))
+        {
+            path = trypath;
+        }
+        else
+        {
+            trypath = stackpath.top().remove_filename() / path / "index.js";
+            if (std::experimental::filesystem::exists(trypath))
+                path = trypath;
+        }
     }
+    if (!std::experimental::filesystem::exists(path) && path.extension().empty() && path.filename() == path)
+    {
+        path = find_module(path);
+    }
+
+    
     printf("Loading module: %s\n", path.c_str());
 
 
