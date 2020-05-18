@@ -1,9 +1,14 @@
 #include "js.h"
 #include <mutex>
-#include <v8.h>
 #include <libplatform/libplatform.h>
+#include <fstream>
+#include <streambuf>
+
+void KeyDBExecuteCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
 
 thread_local v8::Isolate *isolate = nullptr;
+thread_local v8::Persistent<v8::ObjectTemplate, v8::CopyablePersistentTraits<v8::ObjectTemplate>> tls_global;
+
 
 void javascript_initialize()
 {
@@ -26,24 +31,75 @@ class Script
     v8::Local<v8::Context> context;
 };
 
+static void LogCallback(const v8::FunctionCallbackInfo<v8::Value>& args) 
+{
+    if (args.Length() < 1) return;
+    v8::Isolate* isolate = args.GetIsolate();
+    v8::HandleScope scope(isolate);
+    v8::Local<v8::Value> arg = args[0];
+    v8::String::Utf8Value value(isolate, arg);
+    printf("%s\n", *value);
+}
+
+
+void javascript_hooks_initialize(v8::Local<v8::ObjectTemplate> &keydb_obj)
+{
+    keydb_obj->Set(v8::String::NewFromUtf8(isolate, "log", v8::NewStringType::kNormal)
+        .ToLocalChecked(),
+        v8::FunctionTemplate::New(isolate, LogCallback));
+
+    keydb_obj->Set(v8::String::NewFromUtf8(isolate, "call", v8::NewStringType::kNormal)
+        .ToLocalChecked(),
+        v8::FunctionTemplate::New(isolate, KeyDBExecuteCallback));
+}
+
 void javascript_thread_initialize()
 {
     v8::Isolate::CreateParams create_params;
     create_params.array_buffer_allocator = v8::ArrayBuffer::Allocator::NewDefaultAllocator();
     isolate = v8::Isolate::New(create_params);
+
+    v8::HandleScope handle_scope(isolate);
+
+    // Create a template for the global object where we set the
+    // built-in global functions.
+    v8::Local<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate);
+    v8::Local<v8::ObjectTemplate> keydb_obj = v8::ObjectTemplate::New(isolate);
+
+    javascript_hooks_initialize(keydb_obj);
+
+    global->Set(v8::String::NewFromUtf8(isolate, "keydb", v8::NewStringType::kNormal)
+                    .ToLocalChecked(),
+                keydb_obj);
+    global->Set(v8::String::NewFromUtf8(isolate, "redis", v8::NewStringType::kNormal)
+                    .ToLocalChecked(),
+                keydb_obj);
+
+    tls_global = v8::Persistent<v8::ObjectTemplate, v8::CopyablePersistentTraits<v8::ObjectTemplate>>(isolate, global);
 }
 
-std::string javascript_run(const char *rgch, size_t cch)
+std::string prettyPrintException(v8::TryCatch &trycatch)
 {
-    if (isolate == nullptr)
-        javascript_thread_initialize();
+    auto e = trycatch.Exception();
+    v8::Local<v8::Context> context = v8::Local<v8::Context>::New(isolate, isolate->GetCurrentContext());
+    v8::String::Utf8Value estr(isolate, e);
+    std::string str(*estr);
 
+    auto maybeTrace = trycatch.StackTrace(context);
+    v8::Local<v8::Value> traceV;
+
+    if (maybeTrace.ToLocal(&traceV))
+    {
+        str += "\n";
+        str += *v8::String::Utf8Value(isolate, traceV);
+    }
+    return str;
+}
+
+v8::Local<v8::Value> javascript_run(v8::Local<v8::Context> &context, const char *rgch, size_t cch)
+{
     v8::TryCatch trycatch(isolate);
-    v8::Isolate::Scope isolate_scope(isolate);
-    // Create a stack-allocated handle scope.
-    v8::HandleScope handle_scope(isolate);
-    // Create a new context.
-    v8::Local<v8::Context> context = v8::Context::New(isolate);
+    
     // Enter the context for compiling and running the hello world script.
     v8::Context::Scope context_scope(context);
     // Create a string containing the JavaScript source code.
@@ -60,8 +116,7 @@ std::string javascript_run(const char *rgch, size_t cch)
     {
         if (trycatch.HasCaught())
         {
-            v8::String::Utf8Value estr(isolate, trycatch.Exception());
-            throw std::string(*estr);
+            throw prettyPrintException(trycatch);
         }
         throw std::nullptr_t();
     }
@@ -74,15 +129,13 @@ std::string javascript_run(const char *rgch, size_t cch)
     {
         if (trycatch.HasCaught())
         {
-            v8::String::Utf8Value estr(isolate, trycatch.Exception());
-            throw std::string(*estr);
+            throw prettyPrintException(trycatch);
         }
         throw std::nullptr_t();
     }
     
-    // Convert the result to an UTF8 string and print it.
-    v8::String::Utf8Value utf8(isolate, result);
-    return std::string(*utf8);
+    // Convert the result to a KeyDB type and return it
+    return result;
 }
 
 

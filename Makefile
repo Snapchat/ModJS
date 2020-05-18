@@ -10,5 +10,6 @@ modjs.so: $(MODULE_OBJS)
 	$(CXX) -c $(CXX_FLAGS) -o $@ $<
 
 clean:
+	rm -f userland.js
 	rm -f *.o
 	rm -f *.so
