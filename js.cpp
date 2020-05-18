@@ -134,13 +134,15 @@ static void RequireCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
         return;
     }
 
+    v8::Local<v8::Object> valglob = context->Global();
+    v8::Local<v8::Object> valModule = v8::Local<v8::Object>::Cast(valglob->Get(context, v8::String::NewFromUtf8(isolate, "module").ToLocalChecked()).ToLocalChecked());
+    auto strExport = v8::String::NewFromUtf8(isolate, "exports").ToLocalChecked();
+    v8::Local<v8::Value> exports = valModule->Get(context, strExport).ToLocalChecked();
+    valglob->Set(context, strExport, exports);
+
     v8::Local<v8::Value> result;
     if (module->Evaluate(context).ToLocal(&result)) {
-        v8::Local<v8::Object> valglob = context->Global();
-        auto maybeExports = valglob->Get(context, v8::String::NewFromUtf8(isolate, "exports").ToLocalChecked());
-        v8::Local<v8::Value> exports;
-        if (maybeExports.ToLocal(&exports))
-            args.GetReturnValue().Set(exports);
+        args.GetReturnValue().Set(exports);
     }
 }
 
@@ -180,9 +182,14 @@ void javascript_thread_initialize()
     global->Set(v8::String::NewFromUtf8(isolate, "require", v8::NewStringType::kNormal)
                     .ToLocalChecked(),
                 v8::FunctionTemplate::New(isolate, RequireCallback));
-    global->Set(v8::String::NewFromUtf8(isolate, "exports", v8::NewStringType::kNormal)
+
+    v8::Local<v8::ObjectTemplate> module = v8::ObjectTemplate::New(isolate);
+    module->Set(v8::String::NewFromUtf8(isolate, "exports", v8::NewStringType::kNormal)
                     .ToLocalChecked(),
                 v8::ObjectTemplate::New(isolate));
+    global->Set(v8::String::NewFromUtf8(isolate, "module", v8::NewStringType::kNormal)
+                    .ToLocalChecked(),
+                module);
 
     tls_global = v8::Persistent<v8::ObjectTemplate, v8::CopyablePersistentTraits<v8::ObjectTemplate>>(isolate, global);
 }
