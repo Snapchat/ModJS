@@ -10,6 +10,7 @@ void KeyDBExecuteCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
 
 thread_local v8::Isolate *isolate = nullptr;
 thread_local v8::Persistent<v8::ObjectTemplate, v8::CopyablePersistentTraits<v8::ObjectTemplate>> tls_global;
+thread_local v8::Persistent<v8::Context, v8::CopyablePersistentTraits<v8::Context>> tls_context;
 
 void javascript_initialize()
 {
@@ -241,6 +242,7 @@ void javascript_thread_initialize()
                 module);
 
     tls_global = v8::Persistent<v8::ObjectTemplate, v8::CopyablePersistentTraits<v8::ObjectTemplate>>(isolate, global);
+    tls_context = v8::Persistent<v8::Context, v8::CopyablePersistentTraits<v8::Context>>(isolate, v8::Context::New(isolate, nullptr, global));
 }
 
 std::string prettyPrintException(v8::TryCatch &trycatch)

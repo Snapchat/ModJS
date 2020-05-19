@@ -8,6 +8,7 @@
 thread_local RedisModuleCtx *g_ctx = nullptr;
 extern thread_local v8::Isolate *isolate;
 extern thread_local v8::Persistent<v8::ObjectTemplate, v8::CopyablePersistentTraits<v8::ObjectTemplate>> tls_global;
+extern thread_local v8::Persistent<v8::Context> tls_context;
 
 static void ProcessCallReply(v8::Local<v8::Value> &dst, v8::Isolate* isolate, RedisModuleCallReply *reply)
 {
@@ -150,7 +151,7 @@ int evaljs_command(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
         v8::HandleScope handle_scope(isolate);
         // Create a new context.
         v8::Local<v8::ObjectTemplate> global = v8::Local<v8::ObjectTemplate>::New(isolate, tls_global);
-        v8::Local<v8::Context> context = v8::Context::New(isolate, nullptr, global);
+        v8::Local<v8::Context> context = v8::Local<v8::Context>::New(isolate, tls_context);
         v8::Local<v8::Value> result = javascript_run(context, rgch, cch);
         processResult(ctx, context, result);
     }
