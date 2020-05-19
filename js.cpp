@@ -9,10 +9,6 @@
 
 void KeyDBExecuteCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
 
-thread_local v8::Isolate *isolate = nullptr;
-thread_local v8::Persistent<v8::ObjectTemplate, v8::CopyablePersistentTraits<v8::ObjectTemplate>> tls_global;
-thread_local v8::Persistent<v8::Context, v8::CopyablePersistentTraits<v8::Context>> tls_context;
-
 void javascript_initialize()
 {
     v8::V8::InitializeICUDefaultLocation("keydb-server");
@@ -31,11 +27,12 @@ void javascript_shutdown()
 class HotScript
 {
     v8::Persistent<v8::Script> m_script;
+    size_t m_cch;
     BYTE m_hash[SHA256_BLOCK_SIZE];
 
 public:
-    HotScript(const char *rgch, size_t cch, v8::Local<v8::Script> script)
-        : m_script(isolate, script)
+    HotScript(v8::Isolate *isolate, const char *rgch, size_t cch, v8::Local<v8::Script> script)
+        : m_script(isolate, script), m_cch(cch)
     {
         SHA256_CTX ctx;
         sha256_init(&ctx);
@@ -43,18 +40,21 @@ public:
         sha256_final(&ctx, m_hash);
     }
 
-    bool FGetScript(const char *rgch, size_t cch, v8::Local<v8::Script> *pscriptOut)
+    bool FGetScript(v8::Isolate *isolate, const char *rgch, size_t cch, v8::Local<v8::Script> *pscriptOut)
     {
+        if (cch != m_cch)
+            return false;
+
         BYTE hashT[SHA256_BLOCK_SIZE];
         SHA256_CTX ctx;
         sha256_init(&ctx);
         sha256_update(&ctx, (BYTE*)rgch, cch);
         sha256_final(&ctx, hashT);
 
-        return FGetScript(hashT, pscriptOut);
+        return FGetScript(isolate, hashT, pscriptOut);
     }
 
-    bool FGetScript(const BYTE *hash, v8::Local<v8::Script> *pscriptOut)
+    bool FGetScript(v8::Isolate *isolate, const BYTE *hash, v8::Local<v8::Script> *pscriptOut)
     {
         if (memcmp(m_hash, hash, SHA256_BLOCK_SIZE))
             return false;
@@ -93,6 +93,9 @@ public:
     }
 };
 
+JSContext::JSContext()
+{}
+
 std::experimental::filesystem::path find_module(std::experimental::filesystem::path name)
 {
     std::experimental::filesystem::path path;
@@ -119,11 +122,15 @@ std::experimental::filesystem::path find_module(std::experimental::filesystem::p
     } while (!wdir.empty());
 }
 
-static void RequireCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
+/*static*/ void JSContext::RequireCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     static thread_local std::stack<std::experimental::filesystem::path> stackpath;
+    v8::Isolate *isolate = args.GetIsolate();
 
     if (args.Length() != 1) return;
+
+    JSContext *jscontext = (JSContext*)isolate->GetData(0);
+
     v8::HandleScope scope(isolate);
     v8::Local<v8::Value> arg = args[0];
     v8::String::Utf8Value utf8Path(isolate, arg);
@@ -171,7 +178,7 @@ static void RequireCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
         return; // Failed to read file
     }
     
-    v8::Local<v8::ObjectTemplate> global = v8::Local<v8::ObjectTemplate>::New(isolate, tls_global);
+    v8::Local<v8::ObjectTemplate> global = v8::Local<v8::ObjectTemplate>::New(isolate, jscontext->m_global);
     v8::Local<v8::Context> context = v8::Context::New(isolate, nullptr, global);
 
     v8::ScriptOrigin origin(arg,      // specifier
@@ -226,7 +233,7 @@ static void RequireCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
 }
 
 
-void javascript_hooks_initialize(v8::Local<v8::ObjectTemplate> &keydb_obj)
+void JSContext::javascript_hooks_initialize(v8::Local<v8::ObjectTemplate> &keydb_obj)
 {
     keydb_obj->Set(v8::String::NewFromUtf8(isolate, "log", v8::NewStringType::kNormal)
         .ToLocalChecked(),
@@ -237,7 +244,7 @@ void javascript_hooks_initialize(v8::Local<v8::ObjectTemplate> &keydb_obj)
         v8::FunctionTemplate::New(isolate, KeyDBExecuteCallback));
 }
 
-void javascript_thread_initialize()
+void JSContext::initialize()
 {
     v8::Isolate::CreateParams create_params;
     create_params.array_buffer_allocator = v8::ArrayBuffer::Allocator::NewDefaultAllocator();
@@ -270,11 +277,13 @@ void javascript_thread_initialize()
                     .ToLocalChecked(),
                 module);
 
-    tls_global = v8::Persistent<v8::ObjectTemplate, v8::CopyablePersistentTraits<v8::ObjectTemplate>>(isolate, global);
-    tls_context = v8::Persistent<v8::Context, v8::CopyablePersistentTraits<v8::Context>>(isolate, v8::Context::New(isolate, nullptr, global));
+
+    isolate->SetData(0, this);
+    m_global = v8::Persistent<v8::ObjectTemplate, v8::CopyablePersistentTraits<v8::ObjectTemplate>>(isolate, global);
+    m_context = v8::Persistent<v8::Context, v8::CopyablePersistentTraits<v8::Context>>(isolate, v8::Context::New(isolate, nullptr, global));
 }
 
-std::string prettyPrintException(v8::TryCatch &trycatch)
+std::string JSContext::prettyPrintException(v8::TryCatch &trycatch)
 {
     auto e = trycatch.Exception();
     v8::Local<v8::Context> context = v8::Local<v8::Context>::New(isolate, isolate->GetCurrentContext());
@@ -292,7 +301,7 @@ std::string prettyPrintException(v8::TryCatch &trycatch)
     return str;
 }
 
-v8::Local<v8::Value> javascript_run(v8::Local<v8::Context> &context, v8::Local<v8::Script> &script)
+v8::Local<v8::Value> JSContext::run(v8::Local<v8::Context> &context, v8::Local<v8::Script> &script)
 {
     // Run the script to get the result.
     v8::Context::Scope context_scope(context);
@@ -314,16 +323,16 @@ v8::Local<v8::Value> javascript_run(v8::Local<v8::Context> &context, v8::Local<v
     return result;
 }
 
-v8::Local<v8::Value> javascript_run(v8::Local<v8::Context> &context, const char *rgch, size_t cch)
+v8::Local<v8::Value> JSContext::run(const char *rgch, size_t cch)
 {
-    static thread_local HotScript *hotscript = nullptr;
     v8::TryCatch trycatch(isolate);
     
     // Enter the context for compiling and running the hello world script.
+    v8::Local<v8::Context> context = v8::Local<v8::Context>::New(isolate, m_context);
     v8::Context::Scope context_scope(context);
 
     v8::Local<v8::Script> script;
-    if (hotscript == nullptr || !hotscript->FGetScript(rgch, cch, &script))
+    if (m_sphotscript == nullptr || !m_sphotscript->FGetScript(isolate, rgch, cch, &script))
     {
         // Create a string containing the JavaScript source code.
         v8::Local<v8::String> sourceText =
@@ -345,13 +354,12 @@ v8::Local<v8::Value> javascript_run(v8::Local<v8::Context> &context, const char 
             }
             throw std::nullptr_t();
         }
-        delete hotscript;
-        hotscript = new HotScript(rgch, cch, script);        
+        m_sphotscript = std::make_unique<HotScript>(isolate, rgch, cch, script);
     }
-    return javascript_run(context, script);
+    return run(context, script);
 }
 
-void javascript_thread_shutdown()
+JSContext::~JSContext()
 {
     isolate->Dispose();
 }

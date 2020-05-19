@@ -5,10 +5,8 @@
 #include <v8.h>
 #include <math.h>
 
-thread_local RedisModuleCtx *g_ctx = nullptr;
-extern thread_local v8::Isolate *isolate;
-extern thread_local v8::Persistent<v8::ObjectTemplate, v8::CopyablePersistentTraits<v8::ObjectTemplate>> tls_global;
-extern thread_local v8::Persistent<v8::Context> tls_context;
+RedisModuleCtx *g_ctx = nullptr;
+JSContext *g_jscontext = nullptr;
 
 static void ProcessCallReply(v8::Local<v8::Value> &dst, v8::Isolate* isolate, RedisModuleCallReply *reply)
 {
@@ -91,7 +89,7 @@ void KeyDBExecuteCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
 }
 
 
-static void processResult(RedisModuleCtx *ctx, v8::Local<v8::Context> &v8ctx, v8::Local<v8::Value> &result)
+static void processResult(RedisModuleCtx *ctx, v8::Isolate *isolate, v8::Local<v8::Context> &v8ctx, v8::Local<v8::Value> &result)
 {
     if (result->IsArray())
     {
@@ -102,7 +100,7 @@ static void processResult(RedisModuleCtx *ctx, v8::Local<v8::Context> &v8ctx, v8
             auto maybe = array->Get(v8ctx, ielem);
             v8::Local<v8::Value> val;
             if (maybe.ToLocal(&val))
-                processResult(ctx, v8ctx, val);
+                processResult(ctx, isolate, v8ctx, val);
             else
                 RedisModule_ReplyWithNull(ctx);
         }
@@ -138,22 +136,21 @@ int evaljs_command(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
         return REDISMODULE_ERR;
     }
 
-    if (isolate == nullptr)
-        javascript_thread_initialize();
+    if (g_jscontext == nullptr)
+    {
+        g_jscontext = new JSContext();
+        g_jscontext->initialize();
+    }
 
     size_t cch = 0;
     const char *rgch = RedisModule_StringPtrLen(argv[1], &cch);
     try
     {
         g_ctx = ctx;
-        v8::Isolate::Scope isolate_scope(isolate);
-        // Create a stack-allocated handle scope.
-        v8::HandleScope handle_scope(isolate);
-        // Create a new context.
-        v8::Local<v8::ObjectTemplate> global = v8::Local<v8::ObjectTemplate>::New(isolate, tls_global);
-        v8::Local<v8::Context> context = v8::Local<v8::Context>::New(isolate, tls_context);
-        v8::Local<v8::Value> result = javascript_run(context, rgch, cch);
-        processResult(ctx, context, result);
+        v8::HandleScope scope(g_jscontext->getIsolate());
+        v8::Local<v8::Value> result = g_jscontext->run(rgch, cch);
+        auto context = g_jscontext->getCurrentContext();
+        processResult(ctx, g_jscontext->getIsolate(), context, result);
     }
     catch (std::string strerr)
     {
