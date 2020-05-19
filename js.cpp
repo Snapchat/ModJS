@@ -5,6 +5,7 @@
 #include <streambuf>
 #include <stack>
 #include <experimental/filesystem>
+#include "sha256.h"
 
 void KeyDBExecuteCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
 
@@ -27,10 +28,42 @@ void javascript_shutdown()
     v8::V8::Dispose();
 }
 
-class Script
+class HotScript
 {
-    v8::Local<v8::Script> script;
-    v8::Local<v8::Context> context;
+    v8::Persistent<v8::Script> m_script;
+    BYTE m_hash[SHA256_BLOCK_SIZE];
+
+public:
+    HotScript(const char *rgch, size_t cch, v8::Local<v8::Script> script)
+        : m_script(isolate, script)
+    {
+        SHA256_CTX ctx;
+        sha256_init(&ctx);
+        sha256_update(&ctx, (BYTE*)rgch, cch);
+        sha256_final(&ctx, m_hash);
+    }
+
+    bool FGetScript(const char *rgch, size_t cch, v8::Local<v8::Script> *pscriptOut)
+    {
+        BYTE hashT[SHA256_BLOCK_SIZE];
+        SHA256_CTX ctx;
+        sha256_init(&ctx);
+        sha256_update(&ctx, (BYTE*)rgch, cch);
+        sha256_final(&ctx, hashT);
+
+        return FGetScript(hashT, pscriptOut);
+    }
+
+    bool FGetScript(const BYTE *hash, v8::Local<v8::Script> *pscriptOut)
+    {
+        if (memcmp(m_hash, hash, SHA256_BLOCK_SIZE))
+            return false;
+
+        *pscriptOut = v8::Local<v8::Script>::New(isolate, m_script);
+        if (pscriptOut->IsEmpty())
+            return false;
+        return true;
+    }
 };
 
 static void LogCallback(const v8::FunctionCallbackInfo<v8::Value>& args) 
@@ -119,10 +152,6 @@ static void RequireCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
     {
         path = find_module(path);
     }
-
-    
-    printf("Loading module: %s\n", path.c_str());
-
 
     std::ifstream file(path.c_str(), std::ios::binary | std::ios::ate);
     std::streamsize size = file.tellg();
@@ -263,32 +292,12 @@ std::string prettyPrintException(v8::TryCatch &trycatch)
     return str;
 }
 
-v8::Local<v8::Value> javascript_run(v8::Local<v8::Context> &context, const char *rgch, size_t cch)
+v8::Local<v8::Value> javascript_run(v8::Local<v8::Context> &context, v8::Local<v8::Script> &script)
 {
-    v8::TryCatch trycatch(isolate);
-    
-    // Enter the context for compiling and running the hello world script.
-    v8::Context::Scope context_scope(context);
-    // Create a string containing the JavaScript source code.
-    v8::Local<v8::String> source =
-        v8::String::NewFromUtf8(isolate, rgch,
-                                v8::NewStringType::kNormal, cch)
-            .ToLocalChecked();
-    // Compile the source code.
-    v8::Local<v8::Script> script;
-    auto scriptMaybe =
-        v8::Script::Compile(context, source);
-
-    if (!scriptMaybe.ToLocal(&script))
-    {
-        if (trycatch.HasCaught())
-        {
-            throw prettyPrintException(trycatch);
-        }
-        throw std::nullptr_t();
-    }
-    
     // Run the script to get the result.
+    v8::Context::Scope context_scope(context);
+    v8::TryCatch trycatch(isolate);
+
     v8::Local<v8::Value> result;
     auto resultMaybe = script->Run(context);
 
@@ -303,6 +312,43 @@ v8::Local<v8::Value> javascript_run(v8::Local<v8::Context> &context, const char 
     
     // Convert the result to a KeyDB type and return it
     return result;
+}
+
+v8::Local<v8::Value> javascript_run(v8::Local<v8::Context> &context, const char *rgch, size_t cch)
+{
+    static thread_local HotScript *hotscript = nullptr;
+    v8::TryCatch trycatch(isolate);
+    
+    // Enter the context for compiling and running the hello world script.
+    v8::Context::Scope context_scope(context);
+
+    v8::Local<v8::Script> script;
+    if (hotscript == nullptr || !hotscript->FGetScript(rgch, cch, &script))
+    {
+        // Create a string containing the JavaScript source code.
+        v8::Local<v8::String> sourceText =
+            v8::String::NewFromUtf8(isolate, rgch,
+                                    v8::NewStringType::kInternalized, cch)
+                .ToLocalChecked();
+
+        v8::MaybeLocal<v8::Script> scriptMaybe;
+        v8::ScriptCompiler::Source source(sourceText);
+
+        // Compile the source code.
+        scriptMaybe = v8::ScriptCompiler::Compile(context, &source);
+
+        if (!scriptMaybe.ToLocal(&script))
+        {
+            if (trycatch.HasCaught())
+            {
+                throw prettyPrintException(trycatch);
+            }
+            throw std::nullptr_t();
+        }
+        delete hotscript;
+        hotscript = new HotScript(rgch, cch, script);        
+    }
+    return javascript_run(context, script);
 }
 
 void javascript_thread_shutdown()
