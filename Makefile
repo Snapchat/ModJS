@@ -1,5 +1,5 @@
 LD_FLAGS+=  -L$(V8_PATH)/out.gn/x64.release.sample/obj/ -lv8_monolith -lpthread -lstdc++fs
-CXX_FLAGS+= -std=c++17 -fvisibility=hidden -fPIC -O0 -g -isystem $(V8_PATH)/include -DV8_COMPRESS_POINTERS
+CXX_FLAGS+= -std=c++17 -fvisibility=hidden -fPIC -O2 -g -isystem $(V8_PATH)/include -DV8_COMPRESS_POINTERS
 
 MODULE_OBJS = js.o module.o sha256.o
 
