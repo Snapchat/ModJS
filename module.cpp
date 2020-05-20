@@ -6,9 +6,28 @@
 #include <math.h>
 #include <fstream>
 #include <streambuf>
+#include <dlfcn.h>
+#include <experimental/filesystem>
 
 RedisModuleCtx *g_ctx = nullptr;
 JSContext *g_jscontext = nullptr;
+bool g_fInStartup = true;
+
+class KeyDBContext
+{
+    RedisModuleCtx *m_ctxSave;
+public:
+    KeyDBContext(RedisModuleCtx *ctxSet)
+    {
+        m_ctxSave = g_ctx;
+        g_ctx = ctxSet;
+    }
+
+    ~KeyDBContext()
+    {
+        g_ctx = m_ctxSave;
+    }
+};
 
 static void processResult(RedisModuleCtx *ctx, v8::Isolate *isolate, v8::Local<v8::Context> &v8ctx, v8::Local<v8::Value> &result)
 {
@@ -129,8 +148,27 @@ void KeyDBExecuteCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
         RedisModule_FreeString(g_ctx, str);
 }
 
+void LogCallback(const v8::FunctionCallbackInfo<v8::Value>& args) 
+{
+    v8::Isolate* isolate = args.GetIsolate();
+    v8::HandleScope scope(isolate);
+
+    if (args.Length() != 2)
+    {
+        isolate->ThrowException(v8::String::NewFromUtf8(isolate, "Log expects two parameters").ToLocalChecked());
+        return;
+    }
+    
+    
+    v8::String::Utf8Value level(isolate, args[0]);
+    v8::String::Utf8Value message(isolate, args[1]);
+    RedisModule_Log(g_ctx, *level, "%s", *message);
+}
+
 int js_command(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
 {
+    KeyDBContext ctxsav(ctx);
+
     v8::Locker locker(g_jscontext->getIsolate());
     v8::HandleScope scope(g_jscontext->getIsolate());
     if (argc < 1)
@@ -169,6 +207,7 @@ int js_command(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
         }
 
         auto maybeResult = fnCall->Call(context, global, (int)vecargs.size(), vecargs.data());
+
         v8::Local<v8::Value> result;
         if (!maybeResult.ToLocal(&result))
         {
@@ -181,13 +220,11 @@ int js_command(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
     catch (std::string strerr)
     {
         RedisModule_ReplyWithError(ctx, strerr.c_str());
-        g_ctx = nullptr;
         return REDISMODULE_ERR;
     }
     catch (std::nullptr_t)
     {
         RedisModule_ReplyWithError(ctx, "Unknown Error");
-        g_ctx = nullptr;
         return REDISMODULE_ERR;
     }
     return REDISMODULE_OK;
@@ -198,6 +235,12 @@ void RegisterCommandCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
     if (args.Length() < 1) return;
     v8::Isolate* isolate = args.GetIsolate();
     v8::HandleScope scope(isolate);
+
+    if (!g_fInStartup)
+    {
+        isolate->ThrowException(v8::String::NewFromUtf8(isolate, "New commands may only be registered during startup").ToLocalChecked());
+        return;
+    }
 
     v8::Local<v8::Value> vfn = args[0];
     if (!vfn->IsFunction())
@@ -250,6 +293,8 @@ void RegisterCommandCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
 
 int evaljs_command(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
 {
+    KeyDBContext ctxsav(ctx);
+
     if (argc != 2)
     {
         RedisModule_WrongArity(ctx);
@@ -268,7 +313,6 @@ int evaljs_command(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
     const char *rgch = RedisModule_StringPtrLen(argv[1], &cch);
     try
     {
-        g_ctx = ctx;
         v8::HandleScope scope(g_jscontext->getIsolate());
         v8::Local<v8::Value> result = g_jscontext->run(rgch, cch);
         auto context = g_jscontext->getCurrentContext();
@@ -277,16 +321,47 @@ int evaljs_command(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
     catch (std::string strerr)
     {
         RedisModule_ReplyWithError(ctx, strerr.c_str());
-        g_ctx = nullptr;
         return REDISMODULE_ERR;
     }
     catch (std::nullptr_t)
     {
         RedisModule_ReplyWithError(ctx, "Unknown Error");
-        g_ctx = nullptr;
         return REDISMODULE_ERR;
     }
-    g_ctx = nullptr;
+    return REDISMODULE_OK;
+}
+
+int run_startup_script(RedisModuleCtx *ctx, const char *rgchPath, size_t cchPath)
+{
+    KeyDBContext ctxsav(ctx);
+
+    std::ifstream file(rgchPath, std::ios::binary | std::ios::ate);
+    std::streamsize size = file.tellg();
+    if (size == -1)
+    {
+        RedisModule_Log(ctx, "warning", "startup script does not exist");
+        return REDISMODULE_ERR; // Failed to read file
+    }
+
+    file.seekg(0, std::ios::beg);
+
+    std::vector<char> buffer(size);
+    if (!file.read(buffer.data(), size))
+    {
+        RedisModule_Log(ctx, "warning", "failed to read startup script");
+        return REDISMODULE_ERR; // Failed to read file
+    }
+
+    v8::HandleScope scope(g_jscontext->getIsolate());
+    try
+    {
+        g_jscontext->run(buffer.data(), buffer.size(), true /* don't cache */);
+    }
+    catch (std::string str)
+    {
+        RedisModule_Log(ctx, "warning", "%s", str.c_str());
+        return REDISMODULE_ERR;
+    }
     return REDISMODULE_OK;
 }
 
@@ -304,42 +379,39 @@ extern "C" int __attribute__((visibility("default"))) RedisModule_OnLoad(RedisMo
     g_jscontext = new JSContext();
     g_jscontext->initialize();
 
-    if (argc >= 1)
+    // Run our bootstrap.js code
     {
-        // Process the startup script
-        size_t cchPath;
-        const char *rgchPath = RedisModule_StringPtrLen(argv[0], &cchPath);
-
-        std::ifstream file(rgchPath, std::ios::binary | std::ios::ate);
-        std::streamsize size = file.tellg();
-        if (size == -1)
+        Dl_info dlInfo;
+        dladdr((const void*)RedisModule_OnLoad, &dlInfo);
+        if (dlInfo.dli_sname != NULL && dlInfo.dli_saddr != NULL)
         {
-            RedisModule_Log(ctx, "warning", "startup script does not exist");
-            return REDISMODULE_ERR; // Failed to read file
+            std::experimental::filesystem::path path(dlInfo.dli_fname);
+            path.remove_filename();
+            path /= "bootstrap.js";
+            std::string strPath = path.string();
+            if (run_startup_script(ctx, strPath.data(), strPath.size()) == REDISMODULE_ERR)
+            {
+                RedisModule_Log(ctx, "warning", "failed to run bootstrap.js, ensure this is located in the same location as the .so");
+                return REDISMODULE_ERR;
+            }
         }
-
-        file.seekg(0, std::ios::beg);
-
-        std::vector<char> buffer(size);
-        if (!file.read(buffer.data(), size))
+        else
         {
-            RedisModule_Log(ctx, "warning", "failed to read startup script");
-            return REDISMODULE_ERR; // Failed to read file
-        }
-
-        v8::HandleScope scope(g_jscontext->getIsolate());
-        try
-        {
-            g_ctx = ctx;
-            g_jscontext->run(buffer.data(), buffer.size(), true /* don't cache */);
-            g_ctx = nullptr;
-        }
-        catch (std::string str)
-        {
-            RedisModule_Log(ctx, "warning", "%s", str.c_str());
+            RedisModule_Log(ctx, "warning", "failed to locate bootstrap script");
             return REDISMODULE_ERR;
         }
     }
 
+    for (int iarg = 0; iarg < argc; ++iarg)
+    {
+        // Process the startup script
+        size_t cchPath;
+        const char *rgchPath = RedisModule_StringPtrLen(argv[iarg], &cchPath);
+
+        if (run_startup_script(ctx, rgchPath, cchPath) == REDISMODULE_ERR)
+            return REDISMODULE_ERR;
+    }
+
+    g_fInStartup = false;
     return REDISMODULE_OK;
 }

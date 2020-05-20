@@ -6,9 +6,11 @@
 #include <stack>
 #include <experimental/filesystem>
 #include "sha256.h"
+#include "version.h"
 
 void KeyDBExecuteCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
 void RegisterCommandCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
+void LogCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
 
 void javascript_initialize()
 {
@@ -66,16 +68,6 @@ public:
         return true;
     }
 };
-
-static void LogCallback(const v8::FunctionCallbackInfo<v8::Value>& args) 
-{
-    if (args.Length() < 1) return;
-    v8::Isolate* isolate = args.GetIsolate();
-    v8::HandleScope scope(isolate);
-    v8::Local<v8::Value> arg = args[0];
-    v8::String::Utf8Value value(isolate, arg);
-    printf("%s\n", *value);
-}
 
 template<typename T>
 class StackPopper
@@ -234,6 +226,14 @@ std::experimental::filesystem::path find_module(std::experimental::filesystem::p
 }
 
 
+static void VersionCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
+{
+    v8::Isolate *isolate = args.GetIsolate();
+    v8::HandleScope scope(isolate);
+    auto strVersion = v8::String::NewFromUtf8(isolate, MODJS_VERSION).ToLocalChecked();
+    args.GetReturnValue().Set(strVersion);
+}
+
 void JSContext::javascript_hooks_initialize(v8::Local<v8::ObjectTemplate> &keydb_obj)
 {
     keydb_obj->Set(v8::String::NewFromUtf8(isolate, "log", v8::NewStringType::kNormal)
@@ -247,6 +247,10 @@ void JSContext::javascript_hooks_initialize(v8::Local<v8::ObjectTemplate> &keydb
     keydb_obj->Set(v8::String::NewFromUtf8(isolate, "register", v8::NewStringType::kNormal)
         .ToLocalChecked(),
         v8::FunctionTemplate::New(isolate, RegisterCommandCallback));
+
+    keydb_obj->Set(v8::String::NewFromUtf8(isolate, "version", v8::NewStringType::kNormal)
+        .ToLocalChecked(),
+        v8::FunctionTemplate::New(isolate, VersionCallback));
 }
 
 void JSContext::initialize()
@@ -264,10 +268,7 @@ void JSContext::initialize()
 
     javascript_hooks_initialize(keydb_obj);
 
-    global->Set(v8::String::NewFromUtf8(isolate, "keydb", v8::NewStringType::kNormal)
-                    .ToLocalChecked(),
-                keydb_obj);
-    global->Set(v8::String::NewFromUtf8(isolate, "redis", v8::NewStringType::kNormal)
+    global->Set(v8::String::NewFromUtf8(isolate, "_internal", v8::NewStringType::kNormal)
                     .ToLocalChecked(),
                 keydb_obj);
     global->Set(v8::String::NewFromUtf8(isolate, "require", v8::NewStringType::kNormal)
