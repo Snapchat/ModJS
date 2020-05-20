@@ -56,10 +56,9 @@ In this example we will use the popular lodash library, installed with: ``npm in
     
     keydb.register(concat);
 
-The lodash module is imported with require() as it would be in a node.js script.  Note that require() will search for modules starting from the working directory of Redis or KeyDB.
+The lodash module is imported with require() as it would be in a node.js script.  Note that require() will search for modules starting from the working directory of Redis or KeyDB.  Once loaded this new script will concatenate the two strings using camel case.
 
-Once loaded this new script will concatenate the two strings using camel case.
-
+A quick note on compatibility:  ModJS does not implement most I/O functionality available in Node. As a result libraries that open files, sockets, etc may not run in ModJS.  This limitation is to ensure correct replication behavior of scripts.  In the future we may enable an unsafe mode that provides more of this functionality.
 
 # Compiling ModJS
 
