@@ -195,7 +195,7 @@ int js_command(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
 
 void RegisterCommandCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
-    if (args.Length() != 1) return;
+    if (args.Length() < 1) return;
     v8::Isolate* isolate = args.GetIsolate();
     v8::HandleScope scope(isolate);
 
@@ -207,7 +207,41 @@ void RegisterCommandCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
     v8::Local<v8::Value> vfnName = fn->GetName();
     v8::String::Utf8Value fnName(isolate, vfnName);
 
-    if (RedisModule_CreateCommand(g_ctx, *fnName, js_command, "write deny-oom random",0,0,0) == REDISMODULE_ERR) {
+    std::string flags = "write deny-oom random";
+    if (args.Length() >= 2)
+    {
+        // They passed in their own flags
+        v8::Local<v8::Value> vFlags = args[1];
+        if (vFlags->IsString())
+        {
+            auto utfFlags = v8::String::Utf8Value(isolate, vFlags);
+            flags = *utfFlags;
+        }
+    }
+
+    int keyFirst = 0;
+    int keyLast = 0;
+    int keyStep = 0;
+    if (args.Length() > 2)
+    {
+        if (args.Length() != 5)
+        {
+            isolate->ThrowException(v8::String::NewFromUtf8(isolate, "incorrect number of arguments to register()").ToLocalChecked());
+            return;
+        }
+
+        if (!args[2]->IsInt32() || !args[3]->IsInt32() || !args[4]->IsInt32())
+        {
+            isolate->ThrowException(v8::String::NewFromUtf8(isolate, "expected integer argument").ToLocalChecked());
+            return;
+        }
+
+        keyFirst = v8::Local<v8::Int32>::Cast(args[2])->Value();
+        keyLast = v8::Local<v8::Int32>::Cast(args[3])->Value();
+        keyStep = v8::Local<v8::Int32>::Cast(args[4])->Value();
+    }
+
+    if (RedisModule_CreateCommand(g_ctx, *fnName, js_command, flags.c_str(), keyFirst, keyLast, keyStep) == REDISMODULE_ERR) {
         isolate->ThrowException(v8::String::NewFromUtf8(isolate, "failed to register command").ToLocalChecked());
     }
 
