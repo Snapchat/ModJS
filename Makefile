@@ -1,7 +1,9 @@
-LD_FLAGS+=  -L$(V8_PATH)/out.gn/x64.release.sample/obj/ -lv8_monolith -lpthread -lstdc++fs
+
+# Note: -Bsymbolic is necessary to ensure new/delete goes through the overrides in new.cpp and is tracked
+LD_FLAGS+=  -L$(V8_PATH)/out.gn/x64.release.sample/obj/ -lv8_monolith -lpthread -lstdc++fs -static-libstdc++ -Wl,-Bsymbolic 
 CXX_FLAGS+= -std=c++17 -fvisibility=hidden -fPIC -O2 -g -isystem $(V8_PATH)/include -DV8_COMPRESS_POINTERS
 
-MODULE_OBJS = js.o module.o sha256.o
+MODULE_OBJS = js.o module.o sha256.o new.o
 
 modjs.so: $(MODULE_OBJS) | check-env 
 	$(CXX) -shared -o $@ $^ $(LD_FLAGS)
