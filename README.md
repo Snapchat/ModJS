@@ -1,7 +1,7 @@
 # ModJS
 A Javascript Module for KeyDB and Redis.
 
-ModJS allows you to extend Redis and KeyDB with new functionality implemented in JavaScript.  ModJS uses the V8 JIT engine so complex scripts can execute significantly faster than their Lua equivalents.  In addition ModJS supports many node.js modules offering extensive library support for common tasks.
+ModJS allows you to extend Redis and KeyDB with new functionality implemented in JavaScript (ES6).  ModJS uses the V8 JIT engine so complex scripts can execute significantly faster than their Lua equivalents.  In addition ModJS supports many node.js modules offering extensive library support for common tasks.
 
 ## Quick Start Guide
 There are two ways to use ModJS, the first is similar to Lua with the EVALJS Command:
@@ -59,6 +59,12 @@ In this example we will use the popular lodash library, installed with: ``npm in
 The lodash module is imported with require() as it would be in a node.js script.  Note that require() will search for modules starting from the working directory of Redis or KeyDB.  Once loaded this new script will concatenate the two strings using camel case.
 
 A quick note on compatibility:  ModJS does not implement most I/O functionality available in Node. As a result libraries that open files, sockets, etc may not run in ModJS.  This limitation is to ensure correct replication behavior of scripts.  In the future we may enable an unsafe mode that provides more of this functionality.
+
+### Consistency Gurantees and Programming Model
+
+ModJS offers the same consistency gurantees as provided with Lua scripts.  Each JS command is executed atomically regardless of whether EVALJS or registered commands are used.  
+
+Global variables and functions created in startup sripts are available for subsequent use in registered commands and EVALJS functions.  Modules imported via the require() method exist in their own javascript context and may only export via the exports object. 
 
 # Compiling ModJS
 
