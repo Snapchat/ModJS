@@ -15,7 +15,7 @@ public:
     ~JSContext();
 
     void initialize();
-    v8::Local<v8::Value> run(const char *rgch, size_t cch);
+    v8::Local<v8::Value> run(const char *rgch, size_t cch, bool fNoCache = false);
     v8::Local<v8::Context> getCurrentContext() { return v8::Local<v8::Context>::New(isolate, m_context); }
     v8::Isolate *getIsolate() { return isolate; }
 

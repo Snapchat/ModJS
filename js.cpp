@@ -8,6 +8,7 @@
 #include "sha256.h"
 
 void KeyDBExecuteCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
+void RegisterCommandCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
 
 void javascript_initialize()
 {
@@ -242,6 +243,10 @@ void JSContext::javascript_hooks_initialize(v8::Local<v8::ObjectTemplate> &keydb
     keydb_obj->Set(v8::String::NewFromUtf8(isolate, "call", v8::NewStringType::kNormal)
         .ToLocalChecked(),
         v8::FunctionTemplate::New(isolate, KeyDBExecuteCallback));
+
+    keydb_obj->Set(v8::String::NewFromUtf8(isolate, "register", v8::NewStringType::kNormal)
+        .ToLocalChecked(),
+        v8::FunctionTemplate::New(isolate, RegisterCommandCallback));
 }
 
 void JSContext::initialize()
@@ -288,6 +293,10 @@ std::string JSContext::prettyPrintException(v8::TryCatch &trycatch)
     auto e = trycatch.Exception();
     v8::Local<v8::Context> context = v8::Local<v8::Context>::New(isolate, isolate->GetCurrentContext());
     v8::String::Utf8Value estr(isolate, e);
+    if (*estr == nullptr)
+    {
+        throw std::nullptr_t();
+    }
     std::string str(*estr);
 
     auto maybeTrace = trycatch.StackTrace(context);
@@ -323,7 +332,7 @@ v8::Local<v8::Value> JSContext::run(v8::Local<v8::Context> &context, v8::Local<v
     return result;
 }
 
-v8::Local<v8::Value> JSContext::run(const char *rgch, size_t cch)
+v8::Local<v8::Value> JSContext::run(const char *rgch, size_t cch, bool fNoCache)
 {
     v8::TryCatch trycatch(isolate);
     
@@ -332,7 +341,7 @@ v8::Local<v8::Value> JSContext::run(const char *rgch, size_t cch)
     v8::Context::Scope context_scope(context);
 
     v8::Local<v8::Script> script;
-    if (m_sphotscript == nullptr || !m_sphotscript->FGetScript(isolate, rgch, cch, &script))
+    if (fNoCache || m_sphotscript == nullptr || !m_sphotscript->FGetScript(isolate, rgch, cch, &script))
     {
         // Create a string containing the JavaScript source code.
         v8::Local<v8::String> sourceText =
@@ -354,7 +363,8 @@ v8::Local<v8::Value> JSContext::run(const char *rgch, size_t cch)
             }
             throw std::nullptr_t();
         }
-        m_sphotscript = std::make_unique<HotScript>(isolate, rgch, cch, script);
+        if (!fNoCache)
+            m_sphotscript = std::make_unique<HotScript>(isolate, rgch, cch, script);
     }
     return run(context, script);
 }
