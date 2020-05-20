@@ -27,6 +27,8 @@ We then register this function with the server so that it will be directly calla
     
     keydb.register(concat);
 
+*Note: The redis and keydb objects may be used interchangebly.*
+
 To run this script on startup simply add the path as a module parameter, e.g. ``loadmodule /path/to/modjs.so /path/to/startup.js``
 
 We may now use this command from any client.  E.g.:
