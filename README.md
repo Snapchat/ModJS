@@ -79,3 +79,38 @@ If V8 compiled successfully you are now ready to build ModJS.  ModJS can be buil
     make V8_PATH=/path/to/v8
     
 
+## Docker with ModJS
+
+* Visit the official Docker Repository here: [eqalpha/modjs]( https://hub.docker.com/repository/docker/eqalpha/modjs)
+* Dockerfiles can be found [here]( https://github.com/JohnSully/ModJS/Dockerfiles)
+
+### Launch a container with ModJS
+
+<b>KeyDB:</b>
+```
+$ sudo docker run eqalpha/modssl
+```
+
+<b>Redis</b>
+```
+$ sudo docker run eqalpha/modssl:redis-latest
+```
+
+<b>Launch container bound to host:</b>
+```
+$ sudo docker run -p 6379:6379 eqalpha/modssl
+```
+
+### Launch with Startup Script
+When launching with the docker container you will need to share your script with the docker container by mounting it as a volume to the "scripts" volume in the container:
+
+<b>With Redis:</b>
+```
+$ sudo  docker  run  -p  6379:6379  -v  /path/to/startupjs/vol:/scripts  eqalpha/modjs:redis-latest  redis-server  --loadmodule  /usr/lib/keydb/modules/modjs.so  /scripts/startup.js
+```
+
+<b>With KeyDB:</b>
+```
+$ sudo  docker  run  -p  6379:6379  -v  /path/to/startupjs/vol:/scripts  eqalpha/modjs  keydb-server  /etc/keydb/keydb.conf  --loadmodule  /usr/lib/keydb/modules/modjs.so  /scripts/startup.js
+```
+
