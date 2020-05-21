@@ -81,8 +81,8 @@ If V8 compiled successfully you are now ready to build ModJS.  ModJS can be buil
 
 ## Docker with ModJS
 
-* Visit the official Docker Repository here: [eqalpha/modjs]( https://hub.docker.com/repository/docker/eqalpha/modjs)
-* Dockerfiles can be found [here]( https://github.com/JohnSully/ModJS/Dockerfiles)
+* Visit the official Docker Repository here: [eqalpha/modjs](https://hub.docker.com/r/eqalpha/modjs)
+* Dockerfiles can be found [here](https://github.com/JohnSully/ModJS/Dockerfiles)
 
 ### Launch a container with ModJS
 
