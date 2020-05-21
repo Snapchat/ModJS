@@ -6,5 +6,5 @@ RUN mkdir -p /usr/lib/keydb/modules
 COPY modjs.so /usr/lib/keydb/modules
 COPY bootstrap.js /usr/lib/keydb/modules
 VOLUME /scripts
-# Call module to load with keydb-server, specify the config file location
-CMD ["keydb-server", "/etc/keydb.conf", "--loadmodule", "/usr/lib/keydb/modules/modjs.so"]
+# Call module to load with redis-server
+CMD ["keydb-server", "/etc/keydb/keydb.conf", "--loadmodule", "/usr/lib/keydb/modules/modjs.so"]

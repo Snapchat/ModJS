@@ -88,17 +88,17 @@ If V8 compiled successfully you are now ready to build ModJS.  ModJS can be buil
 
 <b>KeyDB:</b>
 ```
-$ sudo docker run eqalpha/modssl
+$ sudo docker run eqalpha/modjs
 ```
 
 <b>Redis</b>
 ```
-$ sudo docker run eqalpha/modssl:redis-latest
+$ sudo docker run eqalpha/modjs:redis-latest
 ```
 
 <b>Launch container bound to host:</b>
 ```
-$ sudo docker run -p 6379:6379 eqalpha/modssl
+$ sudo docker run -p 6379:6379 eqalpha/modjs
 ```
 
 ### Launch with Startup Script
