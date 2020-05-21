@@ -113,6 +113,8 @@ std::experimental::filesystem::path find_module(std::experimental::filesystem::p
         }
         wdir = wdir.parent_path();
     } while (!wdir.empty());
+    
+    return name;
 }
 
 /*static*/ void JSContext::RequireCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
@@ -199,9 +201,9 @@ std::experimental::filesystem::path find_module(std::experimental::filesystem::p
     }
 
     bool flagT;
-    auto maybeInstantiated = module->InstantiateModule(context, [](v8::Local<v8::Context> context, // "main.mjs"
-                                      v8::Local<v8::String> specifier, // "some thing"
-                                      v8::Local<v8::Module> referrer) -> v8::MaybeLocal<v8::Module> {
+    auto maybeInstantiated = module->InstantiateModule(context, [](v8::Local<v8::Context> /*context*/, // "main.mjs"
+                                      v8::Local<v8::String> /*specifier*/, // "some thing"
+                                      v8::Local<v8::Module> /*referrer*/) -> v8::MaybeLocal<v8::Module> {
         return v8::Local<v8::Module>();
     });
     if (!maybeInstantiated.To(&flagT) || !flagT)

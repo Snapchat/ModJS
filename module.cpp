@@ -123,7 +123,7 @@ void KeyDBExecuteCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
     v8::String::Utf8Value fnName(isolate, vfnName);
 
     std::vector<RedisModuleString*> vecstrs;
-    for (size_t iarg = 1; iarg < args.Length(); ++iarg)
+    for (int iarg = 1; iarg < args.Length(); ++iarg)
     {
         v8::String::Utf8Value argument(isolate, args[iarg]);
         vecstrs.push_back(RedisModule_CreateString(g_ctx, *argument, argument.length()));
@@ -331,11 +331,11 @@ int evaljs_command(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
     return REDISMODULE_OK;
 }
 
-int run_startup_script(RedisModuleCtx *ctx, const char *rgchPath, size_t cchPath)
+int run_startup_script(RedisModuleCtx *ctx, const char *szPath)
 {
     KeyDBContext ctxsav(ctx);
 
-    std::ifstream file(rgchPath, std::ios::binary | std::ios::ate);
+    std::ifstream file(szPath, std::ios::binary | std::ios::ate);
     std::streamsize size = file.tellg();
     if (size == -1)
     {
@@ -365,11 +365,18 @@ int run_startup_script(RedisModuleCtx *ctx, const char *rgchPath, size_t cchPath
     return REDISMODULE_OK;
 }
 
+int ReplyWithCString(RedisModuleCtx *ctx, const char *sz)
+{
+    return RedisModule_ReplyWithStringBuffer(ctx, sz, strlen(sz));
+}
+
 extern "C" int __attribute__((visibility("default"))) RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
 {
-    printf("argc: %d\n", argc);
     if (RedisModule_Init(ctx,"modjs",1,REDISMODULE_APIVER_1) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
+
+    if (RedisModule_ReplyWithCString == nullptr)
+        RedisModule_ReplyWithCString = ReplyWithCString;
 
     if (RedisModule_CreateCommand(ctx,"evaljs", evaljs_command,"write deny-oom random",0,0,0) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
@@ -389,7 +396,7 @@ extern "C" int __attribute__((visibility("default"))) RedisModule_OnLoad(RedisMo
             path.remove_filename();
             path /= "bootstrap.js";
             std::string strPath = path.string();
-            if (run_startup_script(ctx, strPath.data(), strPath.size()) == REDISMODULE_ERR)
+            if (run_startup_script(ctx, strPath.c_str()) == REDISMODULE_ERR)
             {
                 RedisModule_Log(ctx, "warning", "failed to run bootstrap.js, ensure this is located in the same location as the .so");
                 return REDISMODULE_ERR;
@@ -408,7 +415,7 @@ extern "C" int __attribute__((visibility("default"))) RedisModule_OnLoad(RedisMo
         size_t cchPath;
         const char *rgchPath = RedisModule_StringPtrLen(argv[iarg], &cchPath);
 
-        if (run_startup_script(ctx, rgchPath, cchPath) == REDISMODULE_ERR)
+        if (run_startup_script(ctx, rgchPath) == REDISMODULE_ERR)
             return REDISMODULE_ERR;
     }
 
