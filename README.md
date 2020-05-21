@@ -102,6 +102,7 @@ $ sudo docker run -p 6379:6379 eqalpha/modssl
 ```
 
 ### Launch with Startup Script
+
 When launching with the docker container you will need to share your script with the docker container by mounting it as a volume to the "scripts" volume in the container:
 
 <b>With Redis:</b>
