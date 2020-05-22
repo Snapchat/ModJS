@@ -4,7 +4,10 @@ A Javascript Module for KeyDB and Redis.
 ModJS allows you to extend Redis and KeyDB with new functionality implemented in JavaScript (ES6).  ModJS uses the V8 JIT engine so complex scripts can execute significantly faster than their Lua equivalents.  In addition ModJS supports many node.js modules offering extensive library support for common tasks.
 
 ## Quick Start Guide
-There are two ways to use ModJS, the first is similar to Lua with the EVALJS Command:
+
+The fastest way to install ModJS is with <a href="https://github.com/JohnSully/ModJS#docker-with-modjs">docker</a>.
+
+Once installed there are two ways to use ModJS, the first is similar to Lua with the EVALJS Command:
 
     > EVALJS "redis.call('get', 'testkey')"
     
