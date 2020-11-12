@@ -386,6 +386,8 @@ extern "C" int __attribute__((visibility("default"))) RedisModule_OnLoad(RedisMo
     g_jscontext = new JSContext();
     g_jscontext->initialize();
 
+    RedisModule_Log(g_ctx, "warning", "Initialized ModJS v0.1.0");
+
     // Run our bootstrap.js code
     {
         Dl_info dlInfo;

@@ -28,3 +28,5 @@ keydb.log = function()
 
 var console = {log: keydb.log}  // alias keydb.log to console.log
 var redis = keydb;  // Alias
+
+keydb.log("verbose", "ModJS firmware v0.1.0 initialized");
