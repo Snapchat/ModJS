@@ -30,7 +30,7 @@ We then register this function with the server so that it will be directly calla
     
     keydb.register(concat);
 
-*Note: The redis and keydb objects may be used interchangebly.*
+*Note: The redis and keydb objects may be used interchangeably.*
 
 To run this script on startup simply add the path as a module parameter, e.g. ``loadmodule /path/to/modjs.so /path/to/startup.js``
 
@@ -47,7 +47,7 @@ We may now use this command from any client.  E.g.:
 
 The above examples were simple enough not to require external libraries, however for more complex tasks it may be desireable to import modules fetched via npm.  ModJS implements the require() api with similar semantics to node.js.  
 
-In this example we will use the popular lodash library, installed with: ``npm install loadash``.  Below we've updated our example script to use the camelCase() function in lodash:
+In this example we will use the popular lodash library, installed with: ``npm install lodash``.  Below we've updated our example script to use the camelCase() function in lodash:
 
     var _ = require("lodash")
 
@@ -63,11 +63,11 @@ The lodash module is imported with require() as it would be in a node.js script.
 
 A quick note on compatibility:  ModJS does not implement most I/O functionality available in Node. As a result libraries that open files, sockets, etc may not run in ModJS.  This limitation is to ensure correct replication behavior of scripts.  In the future we may enable an unsafe mode that provides more of this functionality.
 
-### Consistency Gurantees and Programming Model
+### Consistency Guarantees and Programming Model
 
-ModJS offers the same consistency gurantees as provided with Lua scripts.  Each JS command is executed atomically regardless of whether EVALJS or registered commands are used.  
+ModJS offers the same consistency guarantees as provided with Lua scripts.  Each JS command is executed atomically regardless of whether EVALJS or registered commands are used.  
 
-Global variables and functions created in startup sripts are available for subsequent use in registered commands and EVALJS functions.  Modules imported via the require() method exist in their own javascript context and may only export via the exports object. 
+Global variables and functions created in startup scripts are available for subsequent use in registered commands and EVALJS functions.  Modules imported via the require() method exist in their own javascript context and may only export via the exports object. 
 
 # Compiling ModJS
 
