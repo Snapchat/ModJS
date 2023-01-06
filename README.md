@@ -22,13 +22,15 @@ All commands must be defined at the time the module is loaded in a startup scrip
 Below we create an example script named startup.js which defines a new command named "concat".  This command fetches two keys and returns the string concatenation of the two values.
 We then register this function with the server so that it will be directly callable from Redis or KeyDB clients.
 
-    function concat(key1, key2) {
-        var str1 = redis.call('get', key1);
-        var str2 = redis.call('get', key2);
-        return str1 + str2;
-    }
-    
-    keydb.register(concat);
+```js
+function concat(key1, key2) {
+    var str1 = redis.call('get', key1);
+    var str2 = redis.call('get', key2);
+    return str1 + str2;
+}
+
+keydb.register(concat);
+```
 
 *Note: The redis and keydb objects may be used interchangebly.*
 
@@ -49,15 +51,17 @@ The above examples were simple enough not to require external libraries, however
 
 In this example we will use the popular lodash library, installed with: ``npm install loadash``.  Below we've updated our example script to use the camelCase() function in lodash:
 
-    var _ = require("lodash")
+```js
+var _ = require("lodash")
 
-    function concat(key1, key2) {
-        var str1 = redis.call('get', key1);
-        var str2 = redis.call('get', key2);
-        return _.camelCase(str1 + " " + str2)
-    }
-    
-    keydb.register(concat);
+function concat(key1, key2) {
+    var str1 = redis.call('get', key1);
+    var str2 = redis.call('get', key2);
+    return _.camelCase(str1 + " " + str2)
+}
+
+keydb.register(concat);
+```
 
 The lodash module is imported with require() as it would be in a node.js script.  Note that require() will search for modules starting from the working directory of Redis or KeyDB.  Once loaded this new script will concatenate the two strings using camel case.
 
