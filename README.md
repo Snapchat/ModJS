@@ -5,7 +5,7 @@ ModJS allows you to extend Redis and KeyDB with new functionality implemented in
 
 ## Quick Start Guide
 
-The fastest way to install ModJS is with <a href="https://github.com/JohnSully/ModJS#docker-with-modjs">docker</a>.
+The fastest way to install ModJS is with <a href="https://github.com/Snapchat/ModJS#docker-with-modjs">docker</a>.
 
 Once installed there are two ways to use ModJS, the first is similar to Lua with the EVALJS Command:
 
