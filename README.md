@@ -67,7 +67,7 @@ A quick note on compatibility:  ModJS does not implement most I/O functionality 
 
 ModJS offers the same consistency gurantees as provided with Lua scripts.  Each JS command is executed atomically regardless of whether EVALJS or registered commands are used.  
 
-Global variables and functions created in startup sripts are available for subsequent use in registered commands and EVALJS functions.  Modules imported via the require() method exist in their own javascript context and may only export via the exports object. 
+Global variables and functions created in startup scripts are available for subsequent use in registered commands and EVALJS functions.  Modules imported via the require() method exist in their own javascript context and may only export via the exports object. 
 
 # Compiling ModJS
 
